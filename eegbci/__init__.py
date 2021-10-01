@@ -1,1 +1,3 @@
-from .data_download.fetch_data import download_eegbci, fetch_subject
+from .fetch_data.download_data import download_eegbci
+
+from .preprocessing.process_data import process_eegbci
