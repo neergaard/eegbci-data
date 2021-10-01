@@ -10,7 +10,7 @@ import mne
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 
-from eegbci import fetch_subject
+# from eegbci.data_download.fetch_data import fetch_subject
 
 
 COHORT = "eegbci"
@@ -25,7 +25,8 @@ logger = logging.getLogger("mne")
 
 def process_subject_fn(data_dir, fs, tmin, tmax, freq_band, event_id, runs):
     def _process_subject(subject):
-        raw_fnames = fetch_subject(subject, data_dir, runs=runs)
+        # raw_fnames = fetch_subject(subject, data_dir, runs=runs)
+        raw_fnames = mne.datasets.eegbci.load_data(subject, runs, data_dir)
         raw = mne.io.concatenate_raws([mne.io.read_raw_edf(f, preload=True, verbose=False) for f in raw_fnames])
         mne.datasets.eegbci.standardize(raw)  # set channel names
         montage = mne.channels.make_standard_montage("standard_1005")
@@ -58,6 +59,7 @@ def write_h5(subject, epochs, output_dir):
     # Create subject ID and filename
     subject_id = f"S{subject:03}"
     filename = os.path.join(output_dir, subject_id + ".h5")
+    os.makedirs(output_dir, exist_ok=True)
 
     # Create file
     with h5py.File(filename, "w") as f:
@@ -88,19 +90,15 @@ def write_h5(subject, epochs, output_dir):
         f.attrs["timepoints"] = epochs.times
 
 
-def run_pipeline(args):
+def process_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, subjects=None, freq_band=[0.5, 35.0]):
 
     # Seed everything
     random.seed(42)
     np.random.seed(42)
 
     # Parse arguments
-    data_dir = args.data_dir
-    output_dir = args.output_dir
-    fs = args.fs
-    tmin, tmax = args.tmin, args.tmax
-    subjects = args.subjects or range(109)
-    freq_band = args.freq_band
+    save_dir = output_dir or os.path.join(data_dir, "processed")
+    subjects_to_run = subjects or range(1, 109 + 1)
     event_id = dict(rest=1, hands=2, feet=3)
     runs = list(range(3, 15))
 
@@ -108,18 +106,20 @@ def run_pipeline(args):
     process_subject = process_subject_fn(data_dir, fs, tmin, tmax, freq_band, event_id, runs)
 
     # Run over single subjects
+    start = time()
     process_ok = 0
-    for subject in subjects:
+    for subject in range(1, subjects_to_run + 1):
         logger.info(f"S{subject:03}")
         logger.info("---------------------------")
         raw, events, epochs = process_subject(subject)
 
         # Save subject data to disk
-        out = write_h5(subject, epochs, output_dir)
+        out = write_h5(subject, epochs, save_dir)
         if not out:
             process_ok += 1
 
-    return process_ok
+    stop = time()
+    logger.info(f"Preprocessing finished. {process_ok} subjects written to disk in {stop - start :.3f} seconds.")
 
     # logger.info(f"All subjects written to disk\n")
 
@@ -137,10 +137,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # fmt: on
 
-    if args.output_dir is None:
-        args.output_dir = args.data_dir
-    os.makedirs(args.output_dir, exist_ok=True)
-
     logger.info(f'Usage: {" ".join([x for x in sys.argv])}\n')
     logger.info("Settings:")
     logger.info("---------------------------")
@@ -150,7 +146,4 @@ if __name__ == "__main__":
         else:
             logger.info(f"{k:>15}\t{v}")
 
-    start = time()
-    process_ok = run_pipeline(args)
-    stop = time()
-    logger.info(f"Preprocessing finished. {process_ok} subjects written to disk in {stop - start :.3f} seconds.")
+    process_eegbci(**vars(args))
