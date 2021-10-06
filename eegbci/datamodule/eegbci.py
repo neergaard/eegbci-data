@@ -2,23 +2,12 @@ import argparse
 
 from sklearn import preprocessing
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import Dataset
 
 from eegbci import download_eegbci, process_eegbci
+from eegbci.datamodule.dataset import EEGBCIDataset
 
 
-class __EEGBCI(Dataset):
-    def __init__(self, data_dir):
-        pass
-
-    def __len__(self):
-        pass
-
-    def __getitem__():
-        pass
-
-
-class EEGBCI(LightningDataModule):
+class EEGBCIDataModule(LightningDataModule):
     def __init__(self, data_dir=None, subjects=None, processing_kwargs=None):
         super().__init__()
         self.data_dir = data_dir
@@ -39,8 +28,11 @@ class EEGBCI(LightningDataModule):
 
         # Partition data
         if stage == "fit" or stage is None:
-            self.dataset = __EEGBCI(self.raw_dir)
+            self.dataset = EEGBCIDataset(self.raw_dir)
             self.train_data, self.eval_data = self.dataset.split_data()
+
+        if stage == "test":
+            raise NotImplementedError
 
     def train_dataloader(self):
         pass
@@ -64,8 +56,5 @@ if __name__ == "__main__":
     processing_kwargs = dict(raw_dir="./data", fs=128.0, tmin=-1.0, tmax=4.0, freq_band=[0.5, 35.0],)
 
     # Test datamodule
-    eegbci = EEGBCI("data/processed", 12, processing_kwargs)
+    eegbci = EEGBCIDataModule("data/processed", 12, processing_kwargs)
     eegbci.prepare_data()
-
-    # Test dataset
-    ds = __EEGBCI(args.data_dir,)
