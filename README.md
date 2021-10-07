@@ -21,8 +21,8 @@ python setup.py install
 This can be done either via command line like so:
 
 ```
-> python -m eegbci.fetch_data.download_data -o data/ \    # Save directory
-                                            -n 10         # Ten subjects will be downloaded (if None, all)
+python -m eegbci.fetch_data.download_data -o data/ \    # Save directory
+                                          -n 10         # Ten subjects will be downloaded (if None, all)
 ```
 
 or from within `python` by
@@ -40,13 +40,13 @@ The underlying download mechanisms are from the MNE toolbox, which will ask to c
 Again, this can be run using command line:
 
 ```
-> python -m eegbci.preprocessing.process_data -d data/ \              # Save directory from above
-                                              -o data/processed/ \    # Output directory for processed files
-                                              --fs 128 \              # Sampling frequency
-                                              --tmin -1 \             # Start time of extracted epochs before cue onset
-                                              --tmax 4 \              # End time of extracted epochs after cue onset
-                                              --subjects None \       # Select specific subjects or select all (if None)
-                                              --freq_band 0.3 35.     # Lower and upper frequencies for passband filter
+python -m eegbci.preprocessing.process_data -d data/ \              # Save directory from above
+                                            -o data/processed/ \    # Output directory for processed files
+                                            --fs 128 \              # Sampling frequency
+                                            --tmin -1 \             # Start time of extracted epochs before cue onset
+                                            --tmax 4 \              # End time of extracted epochs after cue onset
+                                            --subjects None \       # Select specific subjects or select all (if None)
+                                            --freq_band 0.3 35.     # Lower and upper frequencies for passband filter
 ```
 
 or from within Python by
@@ -95,7 +95,7 @@ It is also possible to define CV splits and current CV index using supplied argu
 A full list of arguments is available via `--help`:
 
 ```
-> python -m eegbci.datamodule.eegbci --help
+python -m eegbci.datamodule.eegbci --help
 
 usage: eegbci.py [-h] [--raw_dir RAW_DIR] [--overwrite] [-d DATA_DIR] [--balanced_sampling] [--cv CV] [--cv_idx CV_IDX] [--eval_ratio EVAL_RATIO] [--max_eval_records MAX_EVAL_RECORDS] [--n_channels N_CHANNELS] [--n_jobs N_JOBS] [--n_records N_RECORDS] [--scaling {robust,standard}]
                  [--sequence_length SEQUENCE_LENGTH]
