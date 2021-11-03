@@ -10,8 +10,7 @@ Run the following to install the package into an environment:
 ```
 git clone https://github.com/neergaard/eegbci-data.git
 cd eegbci-data
-python setup.py build
-python setup.py install
+pip install .
 ```
 
 ## Examples
