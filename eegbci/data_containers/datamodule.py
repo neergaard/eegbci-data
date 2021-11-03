@@ -1,11 +1,11 @@
 import argparse
+import os
 
-from sklearn import preprocessing
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
 from eegbci import download_eegbci, process_eegbci
-from eegbci.datamodule.dataset import EEGBCIDataset
+from eegbci.data_containers.dataset import EEGBCIDataset
 
 
 class EEGBCIDataModule(LightningDataModule):
