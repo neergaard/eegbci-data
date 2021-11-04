@@ -3,6 +3,7 @@ import logging
 import os
 import random
 from itertools import compress
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 from h5py import File
@@ -20,7 +21,7 @@ SCALERS = {"robust": preprocessing.RobustScaler, "standard": preprocessing.Stand
 
 
 @memory.cache
-def _initialize_record(filename=None, scaling=None, sequence_length=None):
+def _initialize_record(filename: str = None, scaling: str = None, sequence_length: int = None) -> dict:
     if scaling in SCALERS.keys():
         scaler = SCALERS[scaling]()
     else:
@@ -66,20 +67,21 @@ def _initialize_record(filename=None, scaling=None, sequence_length=None):
 class EEGBCIDataset(Dataset):
     def __init__(
         self,
-        data_dir=None,
-        balanced_sampling=None,
-        cv=None,
-        cv_idx=None,
-        eval_ratio=None,
-        max_eval_records=None,
-        n_channels=None,
-        n_jobs=None,
-        n_records=None,
-        scaling=None,
-        sequence_length=None,
+        data_dir: Optional[str] = None,
+        balanced_sampling: Optional[bool] = None,
+        cv: Optional[int] = None,
+        cv_idx: Optional[int] = None,
+        eval_ratio: Optional[float] = None,
+        max_eval_records: Optional[int] = None,
+        n_channels: Optional[int] = None,
+        n_jobs: Optional[int] = None,
+        n_records: Optional[int] = None,
+        scaling: Optional[str] = None,
+        sequence_length: Optional[int] = None,
+        transforms: Optional[list[Callable]] = None,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.data_dir = data_dir
         self.balanced_sampling = balanced_sampling
@@ -91,10 +93,11 @@ class EEGBCIDataset(Dataset):
         self.n_jobs = n_jobs
         self.n_records = n_records
         self.scaling = scaling
-        self.kf = KFold(n_splits=self.cv) if self.cv > 1 else None
         self.sequence_length = (
             sequence_length if isinstance(sequence_length, str) and sequence_length == "full" else int(sequence_length)
         )
+        self.transforms = transforms
+        self.kf = KFold(n_splits=self.cv) if self.cv > 1 else None
         self.records = sorted(os.listdir(self.data_dir))[: self.n_records]
         self.n_records = self.n_records or len(self.records)
 
@@ -117,10 +120,10 @@ class EEGBCIDataset(Dataset):
         self.sequence_counts = dict([s["sequence_counts"] for s in sorted_data])
         self.data_shape = sorted_data[0]["data_shape"][1:]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return sum(self.sequence_counts.values())
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[np.ndarray, np.ndarray, str, int]:
 
         if self.balanced_sampling:
             # Sample a subject
@@ -168,12 +171,17 @@ class EEGBCIDataset(Dataset):
         if scaler:
             x = scaler.transform(x.T).T
 
+        # Possibly do transforms
+        if self.transforms is not None:
+            for transform in self.transforms:
+                x = transform(x)
+
         return x, t, current_subject, current_sequence
 
-    def _shuffle_records(self):
+    def _shuffle_records(self) -> None:
         random.shuffle(self.records)
 
-    def _split_data(self):
+    def _split_data(self) -> Tuple[Dataset, Dataset]:
         self._shuffle_records()
         if self.kf:
             self.train_idx, self.eval_idx = list(self.kf.split(range(self.n_records)))[self.cv_idx]
@@ -186,7 +194,7 @@ class EEGBCIDataset(Dataset):
 
         return self.train_data, self.eval_data
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"""
 
 EEGBCI Dataset
@@ -204,8 +212,12 @@ Parameters:
 \tNumber of sequences:      {len(self)}
 \tScaling type:             {self.scaling}
 \tSequence length:          {self.sequence_length * 5} min
+\tTransforms:               {self.transforms}
 ==============================================================================
 """
+
+    def __repr__(self) -> str:
+        return f"EEGBCIDataset({self.data_dir}, {self.balanced_sampling}, {self.cv}, {self.cv_idx}, {self.eval_ratio}, {self.max_eval_records}, {self.n_channels}, {self.n_jobs}, {self.n_records}, {self.scaling}, {self.sequence_length}, {self.transforms})"
 
     @staticmethod
     def add_dataset_specific_args(parent_parser):
@@ -284,6 +296,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_records", default=None, type=int, help="Total number of records to use.")
     parser.add_argument("--scaling", default="robust", choices=["robust", "standard"], help="How to scale EEG data.")
     parser.add_argument("--sequence_length", default=10, help="Number of sequences in each batch element.")
+    parser.add_argument("--transforms", default=None, nargs="+", help="List of transforms to apply.")
     args = parser.parse_args()
 
     # Test dataset
