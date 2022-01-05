@@ -90,7 +90,7 @@ def write_h5(subject, epochs, output_dir):
         f.attrs["timepoints"] = epochs.times
 
 
-def process_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, subjects=None, freq_band=[0.5, 35.0]):
+def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, subjects=None, freq_band=[0.5, 35.0]):
 
     # Seed everything
     random.seed(42)
@@ -122,28 +122,3 @@ def process_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, subje
     logger.info(f"Preprocessing finished. {process_ok} subjects written to disk in {stop - start :.3f} seconds.")
 
     # logger.info(f"All subjects written to disk\n")
-
-
-if __name__ == "__main__":
-    # fmt: off
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--data_dir", type=str, required=True, help="Path to EDF data.")
-    parser.add_argument("-o", "--output_dir", type=str, default=None, help="Where to store H5 files.")
-    parser.add_argument("--fs", type=int, default=128, help="Desired resampling frequency.")
-    parser.add_argument("--tmin", type=float, default=-1., help="Start time of epochs relative to cue onset.")
-    parser.add_argument("--tmax", type=float, default=4., help="End time of epochs relative to cue onset.")
-    parser.add_argument("--subjects", type=int, nargs="+", default=None, help='Number of subjects to process. If None, all are processed.')
-    parser.add_argument('--freq_band', type=float, nargs="+", default=[0.5, 35.], help='Lower and upper frequencies for passband filter.')
-    args = parser.parse_args()
-    # fmt: on
-
-    logger.info(f'Usage: {" ".join([x for x in sys.argv])}\n')
-    logger.info("Settings:")
-    logger.info("---------------------------")
-    for idx, (k, v) in enumerate(sorted(vars(args).items())):
-        if idx == (len(vars(args)) - 1):
-            logger.info(f"{k:>15}\t{v}\n")
-        else:
-            logger.info(f"{k:>15}\t{v}")
-
-    process_eegbci(**vars(args))
