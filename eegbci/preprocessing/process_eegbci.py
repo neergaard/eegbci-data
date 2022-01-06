@@ -10,47 +10,57 @@ import mne
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 
-# from eegbci.data_download.fetch_data import fetch_subject
-
 
 COHORT = "eegbci"
 logger = logging.getLogger("mne")
-# ch = logging.StreamHandler()
-# ch.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%I:%M:%S"))
-# logger.addHandler(ch)
-# logging.basicConfig(
-#     format="%(asctime)s | %(message)s", datefmt="%I:%M:%S",
-# )
 
 
 def process_subject_fn(data_dir, fs, tmin, tmax, freq_band, event_id, runs):
     def _process_subject(subject):
         # raw_fnames = fetch_subject(subject, data_dir, runs=runs)
         raw_fnames = mne.datasets.eegbci.load_data(subject, runs, data_dir)
-        raw = mne.io.concatenate_raws([mne.io.read_raw_edf(f, preload=True, verbose=False) for f in raw_fnames])
-        mne.datasets.eegbci.standardize(raw)  # set channel names
-        montage = mne.channels.make_standard_montage("standard_1005")
-        raw.set_montage(montage)
+        raws_list = []
+        epochs_list = []
+        events_list = []
+        for fname in raw_fnames:
+            current_run = int(os.path.basename(fname).split(".")[0][-2:])
+            raw = mne.io.read_raw_edf(fname, preload=True, verbose=False)
+            mne.datasets.eegbci.standardize(raw)
 
-        # strip channel names of "." characters
-        raw.rename_channels(lambda x: x.strip("."))
+            # Extract events
+            if current_run in [1, 2]:
+                event_id_to_annotation = {"T0": 0, "T1": 1, "T2": 2}
+            elif current_run in [3, 7, 11]:
+                event_id_to_annotation = {"T0": 0, "T1": 1, "T2": 2}
+            elif current_run in [4, 8, 12]:
+                event_id_to_annotation = {"T0": 0, "T1": 5, "T2": 6}
+            elif current_run in [5, 9, 13]:
+                event_id_to_annotation = {"T0": 0, "T1": 3, "T2": 4}
+            elif current_run in [6, 10, 14]:
+                event_id_to_annotation = {"T0": 0, "T1": 7, "T2": 8}
+            events, _ = mne.events_from_annotations(raw, event_id=event_id_to_annotation)
 
-        # Extract events
-        events, _ = mne.events_from_annotations(raw, event_id=dict(T0=1, T1=2, T2=3))
+            # Resample and filter data
+            raw, events = raw.resample(fs, events=events)
+            iir_params = {"ftype": "butterworth", "order": 2, "output": "sos"}
+            raw.filter(freq_band[0], freq_band[1], method="iir", iir_params=iir_params)
 
-        # Resample data
-        raw, events = raw.resample(fs, events=events)
+            # Epoch data
+            # picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads")
+            if current_run in [1, 2]:
+                epochs = mne.make_fixed_length_epochs(raw, duration=tmax - tmin, preload=True, proj=False, id=0)
+                epochs.event_id = event_id
+            else:
+                epochs = mne.Epochs(
+                    raw, events, event_id, tmin, tmax, proj=False, baseline=None, preload=True, on_missing="ignore",
+                )
+                epochs = epochs.crop(tmin=tmin, tmax=tmax, include_tmax=False)
 
-        # Apply band-pass filter
-        iir_params = {"ftype": "butterworth", "order": 2, "output": "sos"}
-        raw.filter(freq_band[0], freq_band[1], method="iir", iir_params=iir_params)
+            raws_list.append(raw)
+            epochs_list.append(epochs)
+            events_list.append(events)
 
-        # Epoch data
-        picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads")
-        epochs = mne.Epochs(raw, events, event_id, tmin, tmax, proj=True, picks=picks, baseline=None, preload=True)
-        epochs = epochs.crop(tmin=tmin, tmax=tmax, include_tmax=False)
-
-        return raw, events, epochs
+        return raws_list, events_list, mne.concatenate_epochs(epochs_list)
 
     return _process_subject
 
@@ -98,9 +108,19 @@ def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, su
 
     # Parse arguments
     save_dir = output_dir or os.path.join(data_dir, "processed")
-    subjects_to_run = subjects or range(1, 109 + 1)
-    event_id = dict(rest=1, hands=2, feet=3)
-    runs = list(range(3, 15))
+    subjects_to_run = subjects if subjects is not None else range(1, 109 + 1)
+    event_id = {
+        "rest": 0,
+        "hands/actual/left": 1,
+        "hands/actual/right": 2,
+        "hands/actual/both": 3,
+        "feet/actual": 4,
+        "hands/imagined/left": 5,
+        "hands/imagined/right": 6,
+        "hands/imagined/both": 7,
+        "feet/imagined": 8,
+    }
+    runs = list(range(1, 15))
 
     # Submit arguments to processing function
     process_subject = process_subject_fn(data_dir, fs, tmin, tmax, freq_band, event_id, runs)
@@ -108,7 +128,7 @@ def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, su
     # Run over single subjects
     start = time()
     process_ok = 0
-    for subject in range(1, subjects_to_run + 1):
+    for subject in subjects_to_run:
         logger.info(f"S{subject:03}")
         logger.info("---------------------------")
         raw, events, epochs = process_subject(subject)
@@ -120,5 +140,3 @@ def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, su
 
     stop = time()
     logger.info(f"Preprocessing finished. {process_ok} subjects written to disk in {stop - start :.3f} seconds.")
-
-    # logger.info(f"All subjects written to disk\n")
