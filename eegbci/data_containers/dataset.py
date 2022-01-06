@@ -3,7 +3,7 @@ import logging
 import os
 import random
 from itertools import compress
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, List
 
 import numpy as np
 from h5py import File
@@ -78,7 +78,7 @@ class EEGBCIDataset(Dataset):
         n_records: Optional[int] = None,
         scaling: Optional[str] = None,
         sequence_length: Optional[int] = None,
-        transforms: Optional[list[Callable]] = None,
+        transforms: Optional[List[Callable]] = None,
         *args,
         **kwargs,
     ) -> None:
