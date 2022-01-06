@@ -11,7 +11,7 @@ logger = logging.getLogger("mne")
 AVAILABLE_DATASETS = set(download_fns.keys())
 
 
-def download_dataset(output_dir, n_first, cohort):
+def download_dataset(output_dir, n_first=None, cohort="eegbci"):
     download_fns[cohort](output_dir, n_first)
 
 
