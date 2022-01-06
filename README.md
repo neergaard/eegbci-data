@@ -20,16 +20,16 @@ pip install .
 This can be done either via command line like so:
 
 ```
-python -m eegbci.fetch_data.download_data -o data/ \    # Save directory
-                                          -n 10         # Ten subjects will be downloaded (if None, all)
+python -m eegbci.fetch_data -o data/ \    # Save directory
+                            -n 10         # Ten subjects will be downloaded (if None, all)
 ```
 
 or from within `python` by
 
 ```
-from eegbci import download_eegbci
+from eegbci.fetch_data import download_dataset
 
-download_eegbci('data/', None)
+download_dataset('data/', 10)
 ```
 
 The underlying download mechanisms are from the MNE toolbox, which will ask to confirm the default location of the dataset.
@@ -39,21 +39,21 @@ The underlying download mechanisms are from the MNE toolbox, which will ask to c
 Again, this can be run using command line:
 
 ```
-python -m eegbci.preprocessing.process_data -d data/ \              # Save directory from above
-                                            -o data/processed/ \    # Output directory for processed files
-                                            --fs 128 \              # Sampling frequency
-                                            --tmin -1 \             # Start time of extracted epochs before cue onset
-                                            --tmax 4 \              # End time of extracted epochs after cue onset
-                                            --subjects None \       # Select specific subjects or select all (if None)
-                                            --freq_band 0.3 35.     # Lower and upper frequencies for passband filter
+python -m eegbci.preprocess_data -d data/ \              # Save directory from above
+                                 -o data/processed/ \    # Output directory for processed files
+                                 --fs 128 \              # Sampling frequency
+                                 --tmin -1 \             # Start time of extracted epochs before cue onset
+                                 --tmax 4 \              # End time of extracted epochs after cue onset
+                                 --subjects None \       # Select specific subjects or select all (if None)
+                                 --freq_band 0.3 35.     # Lower and upper frequencies for passband filter
 ```
 
 or from within Python by
 
 ```
-from eegbci import process_eegbci
+from eegbci.preprocess_data import process_data
 
-process_eegbci(
+process_data(
     data_dir='data/',
     output_dir='data/processed',
     fs=128,
@@ -71,7 +71,7 @@ The provided LightningDataModule can handle both download and preprocessing of d
 ```
 import argparse
 
-from eegbci import EEGBCIDataModule
+from eegbci.data_containers import EEGBCIDataModule
 
 parser = argparse.ArgumentParser()
 parser = EEGBCIDataModule.add_argparse_args(parser)

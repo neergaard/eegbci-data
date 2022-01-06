@@ -4,7 +4,8 @@ import os
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
-from eegbci import download_eegbci, process_eegbci
+from eegbci.fetch import fetch_eegbci
+from eegbci.preprocessing import preprocess_eegbci
 from eegbci.data_containers.dataset import EEGBCIDataset
 
 
@@ -23,9 +24,9 @@ class EEGBCIDataModule(LightningDataModule):
         n_records = self.dataset_kwargs["n_records"]
         data_dir = self.dataset_kwargs["data_dir"]
         overwrite = self.processing_kwargs["overwrite"]
-        download_eegbci(raw_dir, n_records)
+        fetch_eegbci(raw_dir, n_records)
         if overwrite or not any([p.endswith(".h5") for p in os.listdir(data_dir)]):
-            process_eegbci(raw_dir, data_dir, fs, tmin, tmax, n_records, freq_band)
+            preprocess_eegbci(raw_dir, data_dir, fs, tmin, tmax, n_records, freq_band)
 
     def setup(self, stage=None):
 
