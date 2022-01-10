@@ -2,7 +2,6 @@ import argparse
 import os
 
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import DataLoader
 
 from eegbci.fetch import fetch_eegbci
 from eegbci.preprocessing import preprocess_eegbci
@@ -12,7 +11,10 @@ from eegbci.data_containers.mixins import DataloaderMixin
 
 
 class EEGBCIDataModule(DataloaderMixin, CollateFnMixin, LightningDataModule):
+    def __init__(self, batch_size=1, num_workers=0, processing_kwargs=None, **dataset_kwargs):
         super().__init__()
+        self.batch_size = batch_size
+        self.num_workers = num_workers
         self.dataset_kwargs = dataset_kwargs
         self.processing_kwargs = processing_kwargs
 
@@ -41,7 +43,13 @@ class EEGBCIDataModule(DataloaderMixin, CollateFnMixin, LightningDataModule):
 
     @staticmethod
     def add_argparse_args(parent_parser):
-        return EEGBCIDataset.add_dataset_specific_args(parent_parser)
+        # fmt: off
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        dataset_group = parser.add_argument_group("datamodule")
+        dataset_group.add_argument("-bs", "--batch_size", default=8, type=int, help="Batch size.")
+        dataset_group.add_argument("--num_workers", default=0, help="Number of workers to use in the DataLoader.")
+        # fmt: on
+        return parser
 
 
 if __name__ == "__main__":
@@ -49,6 +57,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--raw_dir", default="./data", help="Location of raw EDF files.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite H5 files in directory.")
+    parser = EEGBCIDataModule.add_argparse_args(parser)
     parser = EEGBCIDataset.add_dataset_specific_args(parser)
     args = parser.parse_args()
 
