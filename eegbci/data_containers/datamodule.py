@@ -7,10 +7,11 @@ from torch.utils.data import DataLoader
 from eegbci.fetch import fetch_eegbci
 from eegbci.preprocessing import preprocess_eegbci
 from eegbci.data_containers.dataset import EEGBCIDataset
+from eegbci.data_containers.mixins import CollateFnMixin
+from eegbci.data_containers.mixins import DataloaderMixin
 
 
-class EEGBCIDataModule(LightningDataModule):
-    def __init__(self, processing_kwargs=None, **dataset_kwargs):
+class EEGBCIDataModule(DataloaderMixin, CollateFnMixin, LightningDataModule):
         super().__init__()
         self.dataset_kwargs = dataset_kwargs
         self.processing_kwargs = processing_kwargs
@@ -37,33 +38,6 @@ class EEGBCIDataModule(LightningDataModule):
 
         if stage == "test":
             self.test_data = self.eval_data
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_data,
-            batch_size=self.train_data.batch_size,
-            shuffle=True,
-            num_workers=self.train_data.n_workers,
-            pin_memory=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.eval_data,
-            batch_size=self.eval_data.batch_size,
-            shuffle=False,
-            num_workers=self.eval_data.n_workers,
-            pin_memory=True,
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.eval_data,
-            batch_size=self.eval_data.batch_size,
-            shuffle=False,
-            num_workers=self.eval_data.n_workers,
-            pin_memory=True,
-        )
 
     @staticmethod
     def add_argparse_args(parent_parser):
