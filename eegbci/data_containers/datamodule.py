@@ -19,16 +19,16 @@ class EEGBCIDataModule(DataloaderMixin, CollateFnMixin, LightningDataModule):
         self.processing_kwargs = processing_kwargs
 
     def prepare_data(self):
-        raw_dir = self.processing_kwargs["raw_dir"]
-        fs = self.processing_kwargs["fs"]
-        tmin = self.processing_kwargs["tmin"]
-        tmax = self.processing_kwargs["tmax"]
-        freq_band = self.processing_kwargs["freq_band"]
-        n_records = self.dataset_kwargs["n_records"]
         data_dir = self.dataset_kwargs["data_dir"]
         overwrite = self.processing_kwargs["overwrite"]
-        fetch_eegbci(raw_dir, n_records)
         if overwrite or not any([p.endswith(".h5") for p in os.listdir(data_dir)]):
+            raw_dir = self.processing_kwargs["raw_dir"]
+            fs = self.processing_kwargs["fs"]
+            tmin = self.processing_kwargs["tmin"]
+            tmax = self.processing_kwargs["tmax"]
+            freq_band = self.processing_kwargs["freq_band"]
+            n_records = self.dataset_kwargs["n_records"]
+            fetch_eegbci(raw_dir, n_records)
             preprocess_eegbci(raw_dir, data_dir, fs, tmin, tmax, n_records, freq_band)
 
     def setup(self, stage=None):
@@ -63,15 +63,18 @@ if __name__ == "__main__":
 
     # Preprocessing arguments
     processing_kwargs = dict(
-        raw_dir="./data", fs=128.0, tmin=-1.0, tmax=4.0, freq_band=[0.5, 35.0], overwrite=args.overwrite
+        raw_dir="./data", fs=128.0, tmin=-0.0, tmax=4.0, freq_band=[0.5, 35.0], overwrite=args.overwrite
     )
 
     # Test datamodule
-    eegbci = EEGBCIDataModule(processing_kwargs=processing_kwargs, **vars(args))
-    eegbci.prepare_data()
-    eegbci.setup("fit")
-    eegbci.setup("test")
+    dm = EEGBCIDataModule(processing_kwargs=processing_kwargs, **vars(args))
+    dm.prepare_data()
+    dm.setup("fit")
+    dm.setup("test")
 
-    print(eegbci.train_data)
-    print(eegbci.eval_data)
-    print(eegbci.test_data)
+    print(dm.train_data)
+    print(dm.eval_data)
+    print(dm.test_data)
+
+    train_loader = dm.train_dataloader()
+    print(next(iter(train_loader)))
