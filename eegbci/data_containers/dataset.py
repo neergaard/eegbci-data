@@ -3,7 +3,7 @@ import logging
 import os
 import random
 from itertools import compress
-from typing import Callable, Optional, Tuple, List
+from typing import Callable, Optional, Tuple, List, Union
 
 import numpy as np
 from h5py import File
@@ -32,7 +32,8 @@ def _initialize_record(filename: str = None, scaling: str = None, sequence_lengt
         y = h5["targets/labels"] or h5["tasks/labels"]
         t = h5["targets/onehot"] or h5["tasks/onehot"]
         metadata = dict(h5.attrs)
-        record_id = metadata["id"]
+        subject_id = metadata["id"]
+        record_id = os.path.basename(filename).split(".")[0]
 
         N, C, T = X.shape
         K = t.shape[-1]
@@ -42,7 +43,7 @@ def _initialize_record(filename: str = None, scaling: str = None, sequence_lengt
             scaler.fit(X[:].transpose(1, 0, 2).reshape((C, N * T)).T)
 
         # Get class counts and locations of tasks
-        class_counts = np.bincount(y[:].flatten() - 1, minlength=K)  # y labels start from 1
+        class_counts = np.bincount(y[:].flatten(), minlength=K)  # y labels start from 1
         class_indices = {v: np.where(y[:] == v)[0] for v in np.unique(y)}
 
         # Get number of sequences in file
@@ -67,17 +68,20 @@ def _initialize_record(filename: str = None, scaling: str = None, sequence_lengt
 class EEGBCIDataset(Dataset):
     def __init__(
         self,
-        data_dir: Optional[str] = None,
-        balanced_sampling: Optional[bool] = None,
-        cv: Optional[int] = None,
-        cv_idx: Optional[int] = None,
-        eval_ratio: Optional[float] = None,
-        max_eval_records: Optional[int] = None,
+        data_dir: str = "data/processed",
+        balanced_sampling: bool = False,
+        cv: int = 1,
+        cv_idx: int = 0,
+        eval_ratio: float = 0.1,
+        max_eval_subjects: int = 100,
         n_channels: Optional[int] = None,
         n_jobs: Optional[int] = None,
-        n_records: Optional[int] = None,
-        scaling: Optional[str] = None,
-        sequence_length: Optional[int] = None,
+        n_subjects: Optional[int] = None,
+        n_runs: Optional[int] = None,
+        subjects: Optional[list] = None,
+        runs: Optional[list] = None,
+        scaling: str = "robust",
+        sequence_length: Union[int, str] = "full",
         transforms: Optional[List[Callable]] = None,
         *args,
         **kwargs,
@@ -88,18 +92,41 @@ class EEGBCIDataset(Dataset):
         self.cv = cv
         self.cv_idx = cv_idx
         self.eval_ratio = eval_ratio
-        self.max_eval_records = max_eval_records
+        self.max_eval_subjects = max_eval_subjects
         self.n_channels = n_channels
         self.n_jobs = n_jobs
-        self.n_records = n_records
+        self.n_subjects = n_subjects
+        self.n_runs = n_runs
+        self.runs = runs
         self.scaling = scaling
         self.sequence_length = (
             sequence_length if isinstance(sequence_length, str) and sequence_length == "full" else int(sequence_length)
         )
+        self.subjects = subjects
         self.transforms = transforms
+
         self.kf = KFold(n_splits=self.cv) if self.cv > 1 else None
-        self.records = sorted(os.listdir(self.data_dir))[: self.n_records]
-        self.n_records = self.n_records or len(self.records)
+        assert (n_subjects is None and subjects is not None) or (
+            n_subjects is not None and subjects is None
+        ), f"Please specify either the number or subjects, or provide a list of subjects to use, received: n_subjects={n_subjects}, subjects={subjects}"
+        assert (n_runs is None and runs is not None) or (
+            n_runs is not None and runs is None
+        ), f"Please specify either the number or runs, or provide a list of runs to use, received: n_runs={n_runs}, runs={runs}"
+        if self.n_subjects is not None:
+            self.subjects = list(range(1, self.n_subjects + 1))
+        elif self.subjects is not None:
+            self.n_subjects = len(self.subjects)
+        if self.n_runs is not None:
+            self.runs = list(range(3, self.n_runs + 1))
+        elif self.runs is not None:
+            self.n_runs = len(self.runs)
+        self.records = sorted(
+            [
+                f
+                for f in os.listdir(self.data_dir)
+                if (int(f[1:4]) in self.subjects) and (int(f.split(".")[0][-2:]) in self.runs)
+            ]
+        )
 
         # Get information about data
         logger.info(f"Prefetching study metadata using {self.n_jobs} workers:")
@@ -179,16 +206,17 @@ class EEGBCIDataset(Dataset):
         return x, t, current_subject, current_sequence
 
     def _shuffle_records(self) -> None:
-        random.shuffle(self.records)
+        # random.shuffle(self.records)
+        random.shuffle(self.subjects)
 
     def _split_data(self) -> Tuple[Dataset, Dataset]:
         self._shuffle_records()
         if self.kf:
-            self.train_idx, self.eval_idx = list(self.kf.split(range(self.n_records)))[self.cv_idx]
+            self.train_idx, self.eval_idx = list(self.kf.split(range(self.n_subjects)))[self.cv_idx]
         else:
-            n_eval = min(int(self.n_records * self.eval_ratio), self.max_eval_records)
-            self.train_idx = np.arange(n_eval, self.n_records)
-            self.eval_idx = np.arange(0, n_eval)
+            n_eval = min(max(int(self.n_subjects * self.eval_ratio), 1), self.max_eval_subjects)
+            self.train_idx = self.subjects[slice(n_eval, self.n_subjects)]
+            self.eval_idx = self.subjects[slice(0, n_eval)]
         self.train_data = EEGBCISubset(self, self.train_idx, balanced_sampling=self.balanced_sampling, name="train")
         self.eval_data = EEGBCISubset(self, self.eval_idx, name="eval")
 
@@ -206,12 +234,15 @@ Parameters:
 \tCross-validation folds:   {self.cv}
 \tCurrent CV fold:          {self.cv_idx}
 \tData directory:           {self.data_dir}
+\tData shape:               {self[0][0].shape}
 \tEval ratio:               {self.eval_ratio}
 \tNumber of channels:       {self.data_shape[0]}
-\tNumber of records:        {self.n_records}
+\tNumber of subjects:       {self.n_subjects}
+\tNumber of runs:           {self.n_runs}
 \tNumber of sequences:      {len(self)}
 \tScaling type:             {self.scaling}
-\tSequence length:          {self.sequence_length * 5} min
+\tSequence duration:        {int(self[0][0].shape[1] // self.metadata[self[0][2]]['fs'])} s
+\tSequence length:          {self.sequence_length}
 \tTransforms:               {self.transforms}
 ==============================================================================
 """
@@ -229,10 +260,13 @@ Parameters:
         dataset_group.add_argument("--cv", default=1, type=int, help="Number of CV folds.")
         dataset_group.add_argument("--cv_idx", default=0, type=int, help="Specific CV fold index.")
         dataset_group.add_argument("--eval_ratio", default=0.1, type=float, help="Ratio of validation subjects.")
-        dataset_group.add_argument("--max_eval_records", default=100, type=int, help="Max. number of subjects to use for eval.")
+        dataset_group.add_argument("--max_eval_subjects", default=100, type=int, help="Max. number of subjects to use for eval.")
         dataset_group.add_argument("--n_channels", default=None, type=int, help="Number of applied EEG channels.")
         dataset_group.add_argument("--n_jobs", default=-1, type=int, help="Number of parallel jobs to run for prefetching.")
-        dataset_group.add_argument("--n_records", default=None, type=int, help="Total number of records to use.")
+        dataset_group.add_argument("--n_subjects", default=None, type=int, help="Total number of subjects to use.")
+        dataset_group.add_argument("--subjects", default=None, type=int, nargs='+', help="Specific subjects to use.")
+        dataset_group.add_argument("--n_runs", default=None, type=int, help="Total number of runs to use for each subject.")
+        dataset_group.add_argument("--runs", default=None, type=int, nargs='+', help="Specific runs to use for eaach subject.")
         dataset_group.add_argument("--scaling", default="robust", choices=["robust", "standard"], help="How to scale EEG data.")
         dataset_group.add_argument("--sequence_length", default=10, help="Number of sequences in each batch element.")
         # fmt: on
@@ -240,12 +274,14 @@ Parameters:
 
 
 class EEGBCISubset(Dataset):
-    def __init__(self, dataset, record_indices, balanced_sampling=False, name=None):
+    def __init__(self, dataset, subject_indices, balanced_sampling=False, name=None):
         self.dataset = dataset
-        self.record_indices = record_indices
+        self.subject_indices = subject_indices
         self.balanced_sampling = balanced_sampling
         self.name = name
-        self.subset_records = [self.dataset.records[idx].split(".")[0] for idx in self.record_indices]
+        self.subset_records = sorted(
+            [r.split(".")[0] for r in self.dataset.records if int(r.split(".")[0][1:4]) in subject_indices]
+        )  # [self.dataset.subjects[idx].split(".")[0] for idx in self.record_indices]
         self.sequence_indices = self.__get_subset_indices()
 
     def __get_subset_indices(self):
@@ -262,7 +298,7 @@ class EEGBCISubset(Dataset):
     def __str__(self):
         return f"""
 
-EEGBCI Subset
+EEGBCI {self.name} subset
 ==============
 
 Parameters:
@@ -271,12 +307,14 @@ Parameters:
 \tCross-validation folds:   {self.dataset.cv}
 \tCurrent CV fold:          {self.dataset.cv_idx}
 \tData directory:           {self.dataset.data_dir}
+\tData shape:               {self[0][0].shape}
 \tEval ratio:               {self.dataset.eval_ratio}
 \tNumber of channels:       {self.dataset.data_shape[0]}
-\tNumber of records:        {len(self.subset_records)}
-\tNumber of sequences:      {len(self)}
+\tNumber of subjects:       {len(self.subject_indices)}
+\tNumber of records:        {len(self)}
 \tScaling type:             {self.dataset.scaling}
-\tSequence length:          {self.dataset.sequence_length * 5} min
+\tSequence duration:        {int(self[0][0].shape[1] // self.dataset.metadata[self[0][2]]['fs'])} s
+\tSequence length:          {self.dataset.sequence_length if isinstance(self.dataset.sequence_length, str) else self.dataset.sequence_length}
 \tSubset:                   {self.name}
 ==============================================================================
 """
@@ -285,18 +323,7 @@ Parameters:
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("-d", "--data_dir", default="./data/processed", type=str, help="Location of H5 dataset files.")
-    parser.add_argument("--balanced_sampling", default=None, action="store_true", help="Whether to balance batches.")
-    parser.add_argument("--cv", default=1, type=int, help="Number of CV folds.")
-    parser.add_argument("--cv_idx", default=0, type=int, help="Specific CV fold index.")
-    parser.add_argument("--eval_ratio", default=0.1, type=float, help="Ratio of validation subjects.")
-    parser.add_argument("--max_eval_records", default=100, type=int, help="Max. number of subjects to use for eval.")
-    parser.add_argument("--n_channels", default=None, type=int, help="Number of applied EEG channels.")
-    parser.add_argument("--n_jobs", default=-1, type=int, help="Number of parallel jobs to run for prefetching.")
-    parser.add_argument("--n_records", default=None, type=int, help="Total number of records to use.")
-    parser.add_argument("--scaling", default="robust", choices=["robust", "standard"], help="How to scale EEG data.")
-    parser.add_argument("--sequence_length", default=10, help="Number of sequences in each batch element.")
-    parser.add_argument("--transforms", default=None, nargs="+", help="List of transforms to apply.")
+    parser = EEGBCIDataset.add_dataset_specific_args(parser)
     args = parser.parse_args()
 
     # Test dataset
