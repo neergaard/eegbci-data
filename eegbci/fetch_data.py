@@ -19,11 +19,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-o",
-        "--output_dir",
-        type=str,
-        required=True,
-        help="Path to output directory.\nWill be created if not available.",
+        "-o", "--output_dir", type=str, required=True, help="Path to output directory.\nWill be created if not available.",
     )
     parser.add_argument(
         "-c",
@@ -33,8 +29,14 @@ if __name__ == "__main__":
         default="eegbci",
         choices=AVAILABLE_DATASETS,
     )
-    parser.add_argument("-n", "--n_first", type=int, help="Number of recordings to download.")
+    parser.add_argument("-n", "--n_first", default=109, type=int, help="Number of recordings to download.")
+    parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
+
+    if args.log:
+        file_handler = logging.FileHandler("logs/fetch_data.log", mode="w")
+        file_handler.setLevel(logging.DEBUG)
+        logger.addHandler(file_handler)
 
     logger.info(f'Usage: {" ".join([x for x in sys.argv])}\n')
     logger.info("Settings:")
