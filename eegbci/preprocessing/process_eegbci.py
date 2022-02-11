@@ -98,9 +98,9 @@ def write_h5(subject, run_nr, epochs, output_dir):
         N, C, T = epochs.get_data().shape
         K = len(epochs.event_id)
         labels = epochs.events[:, -1].reshape(-1, 1)
-        labels_onehot = OneHotEncoder(sparse=False, dtype=int, categories=np.arange(K)[np.newaxis]).fit_transform(
-            labels
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter(action="ignore", category=FutureWarning)
+            labels_onehot = OneHotEncoder(sparse=False, dtype=int, categories=np.arange(K)[np.newaxis]).fit_transform(labels)
         f.create_dataset("signals", (N, C, T), data=data, chunks=(1, C, T))
         f.create_dataset("targets/labels", (N, 1), data=labels, chunks=(1, 1))
         f.create_dataset("targets/onehot", (N, K), data=labels_onehot, chunks=(1, K))
