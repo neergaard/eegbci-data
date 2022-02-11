@@ -1,4 +1,3 @@
-import argparse
 import logging
 import os
 import random
@@ -147,7 +146,6 @@ def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, su
     # runs = list(range(3, 15))  # We skip baselines
 
     # Submit arguments to processing function
-    # process_subject = process_subject_fn(data_dir, fs, tmin, tmax, freq_band, event_id, runs)
     process_subject = partial(
         process_subject_fn, data_dir=data_dir, fs=fs, tmin=tmin, tmax=tmax, freq_band=freq_band, event_id=event_id
     )
