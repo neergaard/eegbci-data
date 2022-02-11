@@ -2,9 +2,10 @@ import argparse
 import logging
 import os
 import random
-import sys
-from time import time
+import warnings
 from functools import partial
+from time import time
+from tqdm import tqdm
 
 import h5py
 import mne
@@ -13,7 +14,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 
 COHORT = "eegbci"
-logger = logging.getLogger("mne")
+logger = logging.getLogger("eegbci")
 
 
 def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event_id):
@@ -25,6 +26,7 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
     events_list = []
     for fname in raw_fnames:
         current_run = int(os.path.basename(fname).split(".")[0][-2:])
+        logger.debug(f"Current run: {current_run:02}")
         raw = mne.io.read_raw_edf(fname, preload=True, verbose=False)
         mne.datasets.eegbci.standardize(raw)
 
@@ -35,19 +37,28 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         if current_run in [1, 2]:
             event_id_to_annotation = {"T0": 0, "T1": 1, "T2": 2}
         elif current_run in [3, 7, 11]:
-            event_id_to_annotation = {"T0": 0, "T1": 1, "T2": 2}
+            event_id_to_annotation = {"T1": 1, "T2": 2}
         elif current_run in [4, 8, 12]:
-            event_id_to_annotation = {"T0": 0, "T1": 5, "T2": 6}
+            event_id_to_annotation = {"T1": 5, "T2": 6}
         elif current_run in [5, 9, 13]:
-            event_id_to_annotation = {"T0": 0, "T1": 3, "T2": 4}
+            event_id_to_annotation = {"T1": 3, "T2": 4}
         elif current_run in [6, 10, 14]:
-            event_id_to_annotation = {"T0": 0, "T1": 7, "T2": 8}
-        events, _ = mne.events_from_annotations(raw, event_id=event_id_to_annotation)
+            event_id_to_annotation = {"T1": 7, "T2": 8}
+        events, _ = mne.events_from_annotations(raw, event_id=event_id_to_annotation, verbose=False)
 
         # Resample and filter data
+        if fs is not None:
+            logger.debug(f"Resampling to {fs} Hz")
         raw, events = raw.resample(fs, events=events)
+        else:
+            logger.debug("Not resampling")
+        if freq_band is not None:
         iir_params = {"ftype": "butterworth", "order": 2, "output": "sos"}
-        raw.filter(freq_band[0], freq_band[1], method="iir", iir_params=iir_params)
+            logger.debug(f"Applying bandpass filter: {freq_band} Hz")
+            logger.debug(f"\tType: {iir_params['ftype']} | Order: {iir_params['order']} | Output: {iir_params['output']}")
+            raw.filter(freq_band[0], freq_band[1], method="iir", iir_params=iir_params, verbose=False)
+        else:
+            logger.debug("No filtering performed")
 
         # Epoch data
         # picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads")
@@ -83,7 +94,7 @@ def write_h5(subject, run_nr, epochs, output_dir):
     with h5py.File(filename, "w") as f:
 
         # Write raw sensor data and labels in chunks
-        logger.info(f"Writing signals and targets to file: {filename}")
+        logger.debug(f"Writing signals and targets to file: {filename}")
         data = epochs.get_data()
         N, C, T = epochs.get_data().shape
         K = len(epochs.event_id)
@@ -94,9 +105,10 @@ def write_h5(subject, run_nr, epochs, output_dir):
         f.create_dataset("signals", (N, C, T), data=data, chunks=(1, C, T))
         f.create_dataset("targets/labels", (N, 1), data=labels, chunks=(1, 1))
         f.create_dataset("targets/onehot", (N, K), data=labels_onehot, chunks=(1, K))
+        logger.debug(f"\tWriting {N} chunks of size {C}x{T} (channels, samples)")
 
         # Enter metadata
-        logger.info(f"Writing metadata to file: {filename}\n")
+        logger.debug(f"Writing metadata to file: {filename}\n")
         f.attrs["ch_names"] = epochs.info["ch_names"]
         f.attrs["data_shape"] = epochs.get_data().shape
         f.attrs["event_id"] = tuple(epochs.event_id.values())
@@ -142,12 +154,14 @@ def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, su
     # Run over single subjects
     start = time()
     ok_subjects = 0
-    for subject in subjects_to_run:
-        logger.info(f"S{subject:03}")
-        logger.info("---------------------------")
+    logger.info(f"Starting preprocessing pipeline on {len(subjects_to_run)} subjects:")
+    for subject in tqdm(subjects_to_run):
+        logger.debug(f"S{subject:03}")
+        logger.debug("---------------------------")
         process_ok = 0
         for run_nr in runs:
             raw, events, epochs = process_subject(subject=subject, runs=run_nr)
+            logger.debug(epochs)
 
             # Save subject data to disk
             out = write_h5(subject, run_nr, epochs, save_dir)
