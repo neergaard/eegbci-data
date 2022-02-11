@@ -143,7 +143,8 @@ def preprocess_eegbci(data_dir, output_dir=None, fs=128, tmin=-1.0, tmax=4.0, su
         "hands/imagined/both": 7,
         "feet/imagined": 8,
     }
-    runs = list(range(3, 15))  # We skip baselines
+    runs = list(range(1, 15))  # We include baselines
+    # runs = list(range(3, 15))  # We skip baselines
 
     # Submit arguments to processing function
     # process_subject = process_subject_fn(data_dir, fs, tmin, tmax, freq_band, event_id, runs)
