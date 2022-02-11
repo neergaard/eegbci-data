@@ -16,11 +16,10 @@ from .utils import ParallelExecutor
 
 
 logger = logging.getLogger("mne")
-memory = Memory("data/.cache", mmap_mode="r", verbose=0)
+memory = Memory("data/.cache", verbose=0)
 SCALERS = {"robust": preprocessing.RobustScaler, "standard": preprocessing.StandardScaler}
 
 
-@memory.cache
 def _initialize_record(filename: str = None, scaling: str = None, sequence_length: int = None) -> dict:
     if scaling in SCALERS.keys():
         scaler = SCALERS[scaling]()
@@ -32,27 +31,30 @@ def _initialize_record(filename: str = None, scaling: str = None, sequence_lengt
         y = h5["targets/labels"] or h5["tasks/labels"]
         t = h5["targets/onehot"] or h5["tasks/onehot"]
         metadata = dict(h5.attrs)
-        subject_id = metadata["id"]
-        record_id = os.path.basename(filename).split(".")[0]
+        X = X[:]
+        y = y[:]
+        t = t[:]
+    subject_id = metadata["id"]
+    record_id = os.path.basename(filename).split(".")[0]
 
-        N, C, T = X.shape
-        K = t.shape[-1]
+    N, C, T = X.shape
+    K = t.shape[-1]
 
-        # Perform scaling
-        if scaler:
-            scaler.fit(X[:].transpose(1, 0, 2).reshape((C, N * T)).T)
+    # Perform scaling
+    if scaler:
+        scaler.fit(X.transpose(1, 0, 2).reshape((C, N * T)).T)
 
-        # Get class counts and locations of tasks
-        class_counts = np.bincount(y[:].flatten(), minlength=K)  # y labels start from 1
-        class_indices = {v: np.where(y[:] == v)[0] for v in np.unique(y)}
+    # Get class counts and locations of tasks
+    class_counts = np.bincount(y.flatten(), minlength=K)  # y labels start from 1
+    class_indices = {v: np.where(y == v)[0] for v in np.unique(y)}
 
-        # Get number of sequences in file
-        if isinstance(sequence_length, str) and sequence_length == "full":
-            sequence_counts = 1
-        else:
-            sequence_counts = N - sequence_length + 1
+    # Get number of sequences in file
+    if isinstance(sequence_length, str) and sequence_length == "full":
+        sequence_counts = 1
+    else:
+        sequence_counts = N - sequence_length + 1
 
-        index_to_record = [{"record": record_id, "idx": x} for x in range(sequence_counts)]
+    index_to_record = [{"record": record_id, "idx": x} for x in range(sequence_counts)]
 
     return dict(
         metadata=(record_id, metadata),
@@ -83,6 +85,7 @@ class EEGBCIDataset(Dataset):
         scaling: str = "robust",
         sequence_length: Union[int, str] = "full",
         transforms: Optional[List[Callable]] = None,
+        window_duration: float = 4,
         *args,
         **kwargs,
     ) -> None:
@@ -104,6 +107,7 @@ class EEGBCIDataset(Dataset):
         )
         self.subjects = subjects
         self.transforms = transforms
+        self.window_duration = window_duration
 
         self.kf = KFold(n_splits=self.cv) if self.cv > 1 else None
         assert (n_subjects is None and subjects is not None) or (
@@ -117,24 +121,26 @@ class EEGBCIDataset(Dataset):
         elif self.subjects is not None:
             self.n_subjects = len(self.subjects)
         if self.n_runs is not None:
-            self.runs = list(range(3, self.n_runs + 1))
+            self.runs = list(range(1, self.n_runs + 1))
         elif self.runs is not None:
             self.n_runs = len(self.runs)
         self.records = sorted(
-            [
-                f
-                for f in os.listdir(self.data_dir)
-                if (int(f[1:4]) in self.subjects) and (int(f.split(".")[0][-2:]) in self.runs)
-            ]
+            [f for f in os.listdir(self.data_dir) if (int(f[1:4]) in self.subjects) and (int(f.split(".")[0][-2:]) in self.runs)]
         )
+        # HACK: Some of the recordings are broken, so the subjects are removed.
+        # See: DOI:10.1109/TNSRE.2021.3139095
+        self.records = sorted([r for r in self.records if r[:4] not in ["S088", "S089", "S092", "S100", "S106"]])
+        self.subjects = list(np.unique([int(r[1:4]) for r in self.records]))
+        self.n_subjects = len(self.subjects)
 
         # Get information about data
-        logger.info(f"Prefetching study metadata using {self.n_jobs} workers:")
+        logger.info(
+            f"Prefetching session metadata for {len(self.records)} records from {self.n_subjects} subjects using {self.n_jobs} workers:"
+        )
+        __retrieve_fn = memory.cache(_initialize_record)
         sorted_data = ParallelExecutor(n_jobs=self.n_jobs, prefer="threads")(total=len(self.records))(
-            delayed(_initialize_record)(
-                filename=os.path.join(self.data_dir, record),
-                scaling=self.scaling,
-                sequence_length=self.sequence_length,
+            delayed(__retrieve_fn)(
+                filename=os.path.join(self.data_dir, record), scaling=self.scaling, sequence_length=self.sequence_length,
             )
             for record in self.records
         )
@@ -152,27 +158,38 @@ class EEGBCIDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[np.ndarray, np.ndarray, str, int]:
 
-        if self.balanced_sampling:
+        current_record = self.index_to_record[idx]["record"]
+        current_subject = int(current_record[1:4])
+
+        if self.balanced_sampling and current_subject in set(self.train_data.subject_indices):
+
             # Sample a subject
-            current_subject = np.random.choice(self.records).split(".")[0]
+            # current_subject = np.random.choice(self.records).split(".")[0]
+            current_record = np.random.choice(self.train_data.subset_records)
 
             # Sample a task
-            current_task = np.random.choice([k for k, v in self.class_indices[current_subject].items() if v.any()])
+            current_task = np.random.choice([k for k, v in self.class_indices[current_record].items() if v.any()])
 
             # Sample a task location
-            current_task_loc = np.random.choice(self.class_indices[current_subject][current_task])
+            try:
+                current_task_loc = np.random.choice(self.class_indices[current_record][current_task])
+            except:
+                print("BAAAD BOIII")
 
             # Sample a sequence around the task location
-            N = self.metadata[current_subject]["n_epochs"]
-            current_sequence_start = np.random.choice(
-                np.arange(
-                    np.max([0, current_task_loc - self.sequence_length + 1]),
-                    np.min([N - self.sequence_length + 1, current_task_loc + 1]),
+            N = self.metadata[current_record]["n_epochs"]
+            try:
+                current_sequence_start = np.random.choice(
+                    np.arange(
+                        np.max([0, current_task_loc - self.sequence_length + 1]),
+                        np.min([N - self.sequence_length + 1, current_task_loc + 1]),
+                    )
                 )
-            )
+            except ValueError:
+                print("BAAAD BOOIII")
             current_sequence = slice(current_sequence_start, current_sequence_start + self.sequence_length)
         else:
-            current_subject = self.index_to_record[idx]["record"]
+
             if isinstance(self.sequence_length, str) and self.sequence_length == "full":
                 current_sequence = slice(None)
             else:
@@ -181,7 +198,7 @@ class EEGBCIDataset(Dataset):
                 )
 
         # Grab data
-        with File(os.path.join(self.data_dir, current_subject + ".h5"), "r") as h5:
+        with File(os.path.join(self.data_dir, current_record + ".h5"), "r") as h5:
             X = h5["signals"] or h5["waveforms"]
             y = h5["targets/labels"] or h5["tasks/labels"]
             t = h5["targets/onehot"] or h5["tasks/onehot"]
@@ -192,9 +209,11 @@ class EEGBCIDataset(Dataset):
         N, C, T = x.shape
         x = x.transpose(1, 0, 2).reshape(C, N * T)
         t = t.T
+        # if x.shape[-1] < 9000:
+        #     print("BAAAD BOIII")
 
         # Possibly perform scaling
-        scaler = self.scalers[current_subject]
+        scaler = self.scalers[current_record]
         if scaler:
             x = scaler.transform(x.T).T
 
@@ -203,7 +222,7 @@ class EEGBCIDataset(Dataset):
             for transform in self.transforms:
                 x = transform(x)
 
-        return x, t, current_subject, current_sequence
+        return x[0, np.newaxis], t, current_record, current_sequence
 
     def _shuffle_records(self) -> None:
         # random.shuffle(self.records)
