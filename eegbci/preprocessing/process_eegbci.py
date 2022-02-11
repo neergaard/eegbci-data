@@ -28,6 +28,9 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         raw = mne.io.read_raw_edf(fname, preload=True, verbose=False)
         mne.datasets.eegbci.standardize(raw)
 
+        # Reference to average
+        raw.set_eeg_reference("average", projection=True)
+
         # Extract events
         if current_run in [1, 2]:
             event_id_to_annotation = {"T0": 0, "T1": 1, "T2": 2}
@@ -49,11 +52,13 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         # Epoch data
         # picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads")
         if current_run in [1, 2]:
-            epochs = mne.make_fixed_length_epochs(raw, duration=tmax - tmin, preload=True, proj=False, id=0)
+            epochs = mne.make_fixed_length_epochs(
+                raw, duration=tmax - tmin, preload=True, proj=True, id=0, overlap=min((tmax - tmin) - 6.0, 0), verbose=False
+            )
             epochs.event_id = event_id
         else:
             epochs = mne.Epochs(
-                raw, events, event_id, tmin, tmax, proj=False, baseline=None, preload=True, on_missing="ignore",
+                raw, events, event_id, tmin, tmax, proj=True, baseline=None, preload=True, on_missing="ignore", verbose=False
             )
             epochs = epochs.crop(tmin=tmin, tmax=tmax, include_tmax=False)
 
