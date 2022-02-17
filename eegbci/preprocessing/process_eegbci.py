@@ -48,11 +48,11 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         # Resample and filter data
         if fs is not None:
             logger.debug(f"Resampling to {fs} Hz")
-        raw, events = raw.resample(fs, events=events)
+            raw, events = raw.resample(fs, events=events)
         else:
             logger.debug("Not resampling")
         if freq_band is not None:
-        iir_params = {"ftype": "butterworth", "order": 2, "output": "sos"}
+            iir_params = {"ftype": "butterworth", "order": 2, "output": "sos"}
             logger.debug(f"Applying bandpass filter: {freq_band} Hz")
             logger.debug(f"\tType: {iir_params['ftype']} | Order: {iir_params['order']} | Output: {iir_params['output']}")
             raw.filter(freq_band[0], freq_band[1], method="iir", iir_params=iir_params, verbose=False)
