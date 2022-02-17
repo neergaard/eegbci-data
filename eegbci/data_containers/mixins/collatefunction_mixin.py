@@ -13,3 +13,6 @@ class CollateFnMixin:
         global_information = torch.as_tensor(subject_id_map)
 
         return dict(waveform=waveforms, global_information=global_information, targets=targets)
+
+    def collate_fn_report(self, batch):
+        return self.collate_fn(batch)
