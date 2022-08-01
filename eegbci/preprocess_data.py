@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from .preprocessing import preprocessing_fns
 
@@ -13,6 +14,7 @@ logger.addHandler(stream_handler)
 
 
 AVAILABLE_DATASETS = set(preprocessing_fns.keys())
+LOG_DIRECTORY = Path('logs') / 'preprocessing'
 
 
 def process_data(cohort="eegbci", *args, **kwargs):
@@ -30,12 +32,14 @@ if __name__ == "__main__":
     parser.add_argument("--tmax", type=float, default=4., help="End time of epochs relative to cue onset.")
     parser.add_argument("--subjects", type=int, nargs="+", default=None, help='Number of subjects to process. If None, all are processed.')
     parser.add_argument('--freq_band', type=float, nargs="+", default=None, help='Lower and upper frequencies for passband filter.')
-    parser.add_argument('--log', action='store_true')
+    parser.add_argument('--log', action='store_true', dest='log')
+    parser.add_argument('--no-log', action='store_false', dest='log')
     args = parser.parse_args()
     # fmt: on
 
     if args.log:
-        file_handler = logging.FileHandler("logs/process_data.log", mode="w")
+        LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(LOG_DIRECTORY / "process_data.log", mode="w")
         file_handler.setLevel(logging.DEBUG)
         logger.addHandler(file_handler)
 
@@ -48,8 +52,9 @@ if __name__ == "__main__":
         else:
             logger.info(f"{k:>15}\t{v}")
 
-    if args.log:
-        args = vars(args)
+    args = vars(args)
+    if args['log']:
+        # args = vars(args)
         args.pop("log")
 
     process_data(**args)

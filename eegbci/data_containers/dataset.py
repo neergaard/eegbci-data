@@ -125,7 +125,11 @@ class EEGBCIDataset(Dataset):
         elif self.runs is not None:
             self.n_runs = len(self.runs)
         self.records = sorted(
-            [f for f in os.listdir(self.data_dir) if (int(f[1:4]) in self.subjects) and (int(f.split(".")[0][-2:]) in self.runs)]
+            [
+                f
+                for f in os.listdir(self.data_dir)
+                if (int(f[1:4]) in self.subjects) and (int(f.split(".")[0][-2:]) in self.runs)
+            ]
         )
         # HACK: Some of the recordings are broken, so the subjects are removed.
         # See: DOI:10.1109/TNSRE.2021.3139095
@@ -140,7 +144,9 @@ class EEGBCIDataset(Dataset):
         __retrieve_fn = memory.cache(_initialize_record)
         sorted_data = ParallelExecutor(n_jobs=self.n_jobs, prefer="threads")(total=len(self.records))(
             delayed(__retrieve_fn)(
-                filename=os.path.join(self.data_dir, record), scaling=self.scaling, sequence_length=self.sequence_length,
+                filename=os.path.join(self.data_dir, record),
+                scaling=self.scaling,
+                sequence_length=self.sequence_length,
             )
             for record in self.records
         )

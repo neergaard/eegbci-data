@@ -30,7 +30,7 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         mne.datasets.eegbci.standardize(raw)
 
         # Reference to average
-        raw.set_eeg_reference("average", projection=True)
+        raw.set_eeg_reference("average", projection=False)
 
         # Extract events
         if current_run in [1, 2]:
@@ -54,7 +54,9 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         if freq_band is not None:
             iir_params = {"ftype": "butterworth", "order": 2, "output": "sos"}
             logger.debug(f"Applying bandpass filter: {freq_band} Hz")
-            logger.debug(f"\tType: {iir_params['ftype']} | Order: {iir_params['order']} | Output: {iir_params['output']}")
+            logger.debug(
+                f"\tType: {iir_params['ftype']} | Order: {iir_params['order']} | Output: {iir_params['output']}"
+            )
             raw.filter(freq_band[0], freq_band[1], method="iir", iir_params=iir_params, verbose=False)
         else:
             logger.debug("No filtering performed")
@@ -63,12 +65,27 @@ def process_subject_fn(subject, runs, data_dir, fs, tmin, tmax, freq_band, event
         # picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads")
         if current_run in [1, 2]:
             epochs = mne.make_fixed_length_epochs(
-                raw, duration=tmax - tmin, preload=True, proj=True, id=0, overlap=min((tmax - tmin) - 6.0, 0), verbose=False
+                raw,
+                duration=tmax - tmin,
+                preload=True,
+                proj=True,
+                id=0,
+                overlap=min((tmax - tmin) - 6.0, 0),
+                verbose=False,
             )
             epochs.event_id = event_id
         else:
             epochs = mne.Epochs(
-                raw, events, event_id, tmin, tmax, proj=True, baseline=None, preload=True, on_missing="ignore", verbose=False
+                raw,
+                events,
+                event_id,
+                tmin,
+                tmax,
+                proj=True,
+                baseline=None,
+                preload=True,
+                on_missing="ignore",
+                verbose=False,
             )
             epochs = epochs.crop(tmin=tmin, tmax=tmax, include_tmax=False)
 
@@ -100,7 +117,9 @@ def write_h5(subject, run_nr, epochs, output_dir):
         labels = epochs.events[:, -1].reshape(-1, 1)
         with warnings.catch_warnings():
             warnings.simplefilter(action="ignore", category=FutureWarning)
-            labels_onehot = OneHotEncoder(sparse=False, dtype=int, categories=np.arange(K)[np.newaxis]).fit_transform(labels)
+            labels_onehot = OneHotEncoder(sparse=False, dtype=int, categories=np.arange(K)[np.newaxis]).fit_transform(
+                labels
+            )
         f.create_dataset("signals", (N, C, T), data=data, chunks=(1, C, T))
         f.create_dataset("targets/labels", (N, 1), data=labels, chunks=(1, 1))
         f.create_dataset("targets/onehot", (N, K), data=labels_onehot, chunks=(1, K))
